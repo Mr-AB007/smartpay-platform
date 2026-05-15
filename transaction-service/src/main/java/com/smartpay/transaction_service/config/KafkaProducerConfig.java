@@ -15,6 +15,7 @@ import java.util.Map;
 
 @Configuration
 public class KafkaProducerConfig {
+    //java bassed config , can be done via yml or properties
     @Bean
     public ProducerFactory<String, TransactionEvent> producerFactory() {
 
@@ -31,6 +32,21 @@ public class KafkaProducerConfig {
         config.put(
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                 JsonSerializer.class);
+
+        config.put(
+                ProducerConfig.ACKS_CONFIG,
+                "all"
+        );
+
+        config.put(
+                ProducerConfig.RETRIES_CONFIG,
+                3
+        );
+
+        config.put(
+                JsonSerializer.ADD_TYPE_INFO_HEADERS,
+                false
+        );
 
         return new DefaultKafkaProducerFactory<>(config);
     }
