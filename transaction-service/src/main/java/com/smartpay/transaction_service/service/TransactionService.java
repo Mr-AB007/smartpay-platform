@@ -1,5 +1,7 @@
 package com.smartpay.transaction_service.service;
 
+import com.smartpay.transaction_service.client.AccountServiceClient;
+import com.smartpay.transaction_service.dto.AccountResponse;
 import com.smartpay.transaction_service.dto.TransferRequest;
 import com.smartpay.transaction_service.entity.Transaction;
 import com.smartpay.transaction_service.event.TransactionEvent;
@@ -7,6 +9,7 @@ import com.smartpay.transaction_service.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import com.smartpay.transaction_service.dto.AmountRequest;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -17,9 +20,29 @@ public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final KafkaTemplate<String, TransactionEvent> kafkaTemplate;
+    private final AccountServiceClient accountClient;
 
-    public Transaction createTransaction(
-            TransferRequest request) {
+    public Transaction createTransaction(TransferRequest request) {
+
+        AccountResponse account = accountClient.getAccount(request.getFromAccount());
+
+        if(account.getBalance()
+                .compareTo(request.getAmount()) < 0) {
+
+            throw new RuntimeException(
+                    "Insufficient balance"
+            );
+        }
+
+        AmountRequest amountRequest = new AmountRequest();
+
+        amountRequest.setAmount(request.getAmount());
+
+        //call to account service for withdrawal
+        accountClient.withdraw(
+                request.getFromAccount(),
+                amountRequest
+        );
 
         Transaction transaction = Transaction.builder()
                 .fromAccount(request.getFromAccount())

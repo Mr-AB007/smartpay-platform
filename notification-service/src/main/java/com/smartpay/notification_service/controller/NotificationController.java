@@ -6,6 +6,8 @@ import com.smartpay.notification_service.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/notifications")
 @RequiredArgsConstructor
@@ -18,5 +20,10 @@ public class NotificationController {
             @RequestBody NotificationRequest request) {
 
         return notificationService.createNotification(request);
+    }
+
+    @GetMapping
+    public List<Notification> getAllNotification(){
+        return notificationService.getAllNotification();
     }
 }

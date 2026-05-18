@@ -35,3 +35,8 @@ spring:
             add:
               type:
                 headers: false
+
+
+account:
+  service:
+    url: "http://localhost:8081"
