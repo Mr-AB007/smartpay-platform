@@ -30,8 +30,7 @@ public class TransactionService {
             name = "accountServiceRetry"
     )
     @CircuitBreaker(
-            name = "accountService"
-//            fallbackMethod = "fallbackTransaction"
+            name = "accountService" ,fallbackMethod = "fallbackTransaction"
     )
     public Transaction createTransaction(TransferRequest request) {
         log.info("Executing createTransaction()");
@@ -90,16 +89,23 @@ public class TransactionService {
             Throwable ex) {
 
         log.error(
-                "Fallback triggered after retries exhausted. Reason: {}",
+                "Transaction failed after retry and circuit breaker activation. account={} amount={} reason={}",
+                request.getFromAccount(),
+                request.getAmount(),
                 ex.getMessage()
         );
 
-        return Transaction.builder()
-                .fromAccount(request.getFromAccount())
-                .toAccount(request.getToAccount())
-                .amount(request.getAmount())
-                .status("FAILED")
-                .createdAt(LocalDateTime.now())
-                .build();
+        Transaction failedTransaction =
+                Transaction.builder()
+                        .fromAccount(request.getFromAccount())
+                        .toAccount(request.getToAccount())
+                        .amount(request.getAmount())
+                        .status("FAILED")
+                        .createdAt(LocalDateTime.now())
+                        .build();
+
+        return transactionRepository.save(
+                failedTransaction
+        );
     }
 }

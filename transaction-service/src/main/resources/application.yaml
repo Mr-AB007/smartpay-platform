@@ -48,7 +48,10 @@ resilience4j:
         waitDuration: 2s
 
         retryExceptions:
-          - java.lang.Exception
+          - java.io.IOException              # network failure
+          - java.net.ConnectException        # connection refused (account-service down)
+          - java.util.concurrent.TimeoutException  # timeout
+          - feign.RetryableException
 
   circuitbreaker:
     circuitBreakerAspectOrder: 2
