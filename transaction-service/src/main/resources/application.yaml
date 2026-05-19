@@ -35,7 +35,41 @@ spring:
             add:
               type:
                 headers: false
+resilience4j:
+  retry:
+    retryAspectOrder: 1
 
+    instances:
+
+      accountServiceRetry:
+
+        maxAttempts: 3
+
+        waitDuration: 2s
+
+        retryExceptions:
+          - java.lang.Exception
+
+  circuitbreaker:
+    circuitBreakerAspectOrder: 2
+
+    instances:
+
+      accountService:
+
+        registerHealthIndicator: true
+
+        slidingWindowSize: 5
+
+        minimumNumberOfCalls: 3
+
+        failureRateThreshold: 50
+
+        waitDurationInOpenState: 10s
+
+        permittedNumberOfCallsInHalfOpenState: 2
+
+        automaticTransitionFromOpenToHalfOpenEnabled: true
 
 account:
   service:

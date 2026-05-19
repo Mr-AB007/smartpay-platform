@@ -6,7 +6,10 @@ import com.smartpay.transaction_service.dto.TransferRequest;
 import com.smartpay.transaction_service.entity.Transaction;
 import com.smartpay.transaction_service.event.TransactionEvent;
 import com.smartpay.transaction_service.repository.TransactionRepository;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import com.smartpay.transaction_service.dto.AmountRequest;
@@ -16,13 +19,24 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final KafkaTemplate<String, TransactionEvent> kafkaTemplate;
     private final AccountServiceClient accountClient;
 
+    @Retry(
+            name = "accountServiceRetry"
+    )
+    @CircuitBreaker(
+            name = "accountService"
+//            fallbackMethod = "fallbackTransaction"
+    )
     public Transaction createTransaction(TransferRequest request) {
+        log.info("Executing createTransaction()");
+
+        log.info("Calling account-service for account validation");
 
         AccountResponse account = accountClient.getAccount(request.getFromAccount());
 
@@ -69,5 +83,23 @@ public class TransactionService {
         );
 
         return savedTransaction;
+    }
+
+    public Transaction fallbackTransaction(
+            TransferRequest request,
+            Throwable ex) {
+
+        log.error(
+                "Fallback triggered after retries exhausted. Reason: {}",
+                ex.getMessage()
+        );
+
+        return Transaction.builder()
+                .fromAccount(request.getFromAccount())
+                .toAccount(request.getToAccount())
+                .amount(request.getAmount())
+                .status("FAILED")
+                .createdAt(LocalDateTime.now())
+                .build();
     }
 }
