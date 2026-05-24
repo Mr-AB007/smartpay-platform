@@ -1,6 +1,10 @@
 server:
   port: 8083
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%X{X-Correlation-Id}] %-5level %logger{36} - %msg%n"
+
 spring:
   application:
     name: notification-service
