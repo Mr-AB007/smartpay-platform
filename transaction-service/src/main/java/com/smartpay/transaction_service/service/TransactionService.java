@@ -5,12 +5,17 @@ import com.smartpay.transaction_service.dto.AccountResponse;
 import com.smartpay.transaction_service.dto.TransferRequest;
 import com.smartpay.transaction_service.entity.Transaction;
 import com.smartpay.transaction_service.event.TransactionEvent;
+import com.smartpay.transaction_service.exception.InsufficientBalanceException;
 import com.smartpay.transaction_service.repository.TransactionRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.KafkaHeaders;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import com.smartpay.transaction_service.dto.AmountRequest;
 
@@ -32,7 +37,7 @@ public class TransactionService {
     @CircuitBreaker(
             name = "accountService" ,fallbackMethod = "fallbackTransaction"
     )
-    public Transaction createTransaction(TransferRequest request) {
+    public Transaction createTransaction(TransferRequest request){
         log.info("Executing createTransaction()");
 
         log.info("Calling account-service for account validation");
@@ -42,11 +47,8 @@ public class TransactionService {
         if(account.getBalance()
                 .compareTo(request.getAmount()) < 0) {
 
-            throw new RuntimeException(
-                    "Insufficient balance"
-            );
+            throw new InsufficientBalanceException("Insufficient balance");
         }
-
         AmountRequest amountRequest = new AmountRequest();
 
         amountRequest.setAmount(request.getAmount());
@@ -75,11 +77,24 @@ public class TransactionService {
                 .status("SUCCESS")
                 .build();
 
-        kafkaTemplate.send(
-                "transaction-events",
-                UUID.randomUUID().toString(),
-                event
-        );
+        String correlationId =
+                MDC.get("X-Correlation-Id");
+
+
+        Message<TransactionEvent> message =
+                MessageBuilder
+                        .withPayload(event)
+                        .setHeader(
+                                "X-Correlation-Id",
+                                correlationId
+                        )
+                        .setHeader(
+                                KafkaHeaders.TOPIC,
+                                "transaction-events"
+                        )
+                        .build();
+
+        kafkaTemplate.send(message);
 
         return savedTransaction;
     }
@@ -87,6 +102,9 @@ public class TransactionService {
     public Transaction fallbackTransaction(
             TransferRequest request,
             Throwable ex) {
+        if(ex instanceof InsufficientBalanceException) {
+            throw (InsufficientBalanceException) ex;
+        }
 
         log.error(
                 "Transaction failed after retry and circuit breaker activation. account={} amount={} reason={}",
