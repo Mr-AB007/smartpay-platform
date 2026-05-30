@@ -1,6 +1,17 @@
 server:
   port: 8083
 
+#Zipikin related
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+# Manual tracing
 logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%X{X-Correlation-Id}] %-5level %logger{36} - %msg%n"
@@ -19,6 +30,7 @@ spring:
       ddl-auto: update
 
     show-sql: true
+
   kafka:
     bootstrap-servers: localhost:9092
 
