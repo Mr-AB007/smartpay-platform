@@ -1,6 +1,6 @@
-package com.smartpay.transaction_service.exception;
+package com.smartpay.account_service.exception;
 
-import com.smartpay.transaction_service.dto.ErrorResponse;
+import com.smartpay.account_service.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,12 +48,14 @@ public class GlobalExceptionHandler {
                 error -> errors.put(
                         error.getField(),error.getDefaultMessage()
                 ));
+
         ErrorResponse errorResponse = ErrorResponse.builder()
-                .error("Validation Failed")
+                .path(request.getRequestURI())
                 .validationErrors(errors)
                 .status(HttpStatus.BAD_REQUEST.value())
                 .timestamp(LocalDateTime.now())
-                .path(request.getRequestURI()).build();
+                .error("Validation Failed").build();
+
         return ResponseEntity.badRequest().body(errorResponse);
     }
 }

@@ -1,4 +1,4 @@
-package com.smartpay.transaction_service.dto;
+package com.smartpay.account_service.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;

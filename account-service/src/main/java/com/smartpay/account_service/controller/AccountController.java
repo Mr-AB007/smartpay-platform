@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -44,7 +45,7 @@ public class AccountController {
 
     @PostMapping
     public Account createAccount(
-            @RequestBody CreateAccountRequest request) {
+            @Valid @RequestBody CreateAccountRequest request) {
 
         return accountService.createAccount(request);
     }
@@ -82,7 +83,7 @@ public class AccountController {
     @PutMapping("/{accountNumber}/deposit")
     public Account deposit(
             @PathVariable String accountNumber,
-            @RequestBody DepositRequest request) {
+            @Valid @RequestBody DepositRequest request) {
 
         return accountService.deposit(
                 accountNumber,
@@ -96,7 +97,7 @@ public class AccountController {
     @PutMapping("/{accountNumber}/withdraw")
     public Account withdraw(
             @PathVariable String accountNumber,
-            @RequestBody WithdrawRequest request) {
+           @Valid @RequestBody WithdrawRequest request) {
 
         return accountService.withdraw(
                 accountNumber,

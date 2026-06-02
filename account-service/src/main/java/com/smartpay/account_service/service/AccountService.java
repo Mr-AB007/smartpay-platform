@@ -2,6 +2,7 @@ package com.smartpay.account_service.service;
 
 import com.smartpay.account_service.dto.CreateAccountRequest;
 import com.smartpay.account_service.entity.Account;
+import com.smartpay.account_service.exception.InsufficientBalanceException;
 import com.smartpay.account_service.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,7 +80,7 @@ public class AccountService {
 
             log.error("Withdrawal failed due to insufficient balance for accountNumber={} requestedAmount={} availableBalance={}", accountNumber, amount, account.getBalance());
 
-            throw new RuntimeException("Insufficient balance");
+            throw new InsufficientBalanceException("Insufficient balance");
         }
 
         account.setBalance(account.getBalance().subtract(amount));
