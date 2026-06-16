@@ -1,72 +1,204 @@
 stages:
-  - build
   - test
+  - build
   # - package
   # - deploy
 
 variables:
-  # This automatically targets your project's built-in GitLab Container Registry
-  DOCKER_IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-  MICROSERVICES: "account-service transaction-service notification-service smartpay-gateway"
+  # Optimize Maven performance for CI/CD containers
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end -DinstallAtEnd=true -DdeployAtEnd=true"
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
 
+# Shared cache across all pipelines and jobs to speed up Maven dependencies
 cache:
-  key: "maven-cache-$CI_COMMIT_REF_SLUG"
+  key: "maven-shared-cache"
   paths:
     - .m2/repository
 
 # ==========================================
-# 1. BUILD STAGE (Runs on ALL branches)
+# REUSABLE TEMPLATES (DRY Principle)
 # ==========================================
-compile-code:
-  stage: build
+
+.maven-base:
   image: maven:3.9.6-eclipse-temurin-21
-  script:
-    - echo "========================================================="
-    - echo "STARTING MAVEN COMPILATION"
-    - echo "Triggered by User - $GITLAB_USER_NAME (@$GITLAB_USER_LOGIN)"
-    - echo "Commit Message   - $CI_COMMIT_MESSAGE"
-    - echo "========================================================="
-    - mvn clean compile
-  # Enterprise Audit Logs
-  after_script:
-    - echo "[AUDIT LOG] Compilation phase completed for commit $CI_COMMIT_SHA by $GITLAB_USER_NAME."
+  before_script:
+    - cd $SERVICE_DIR
+
+.docker-base:
+  image: docker:24.0.7
+  services:
+    - docker:24.0.7-dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
 
 # ==========================================
-# 2. TEST STAGE (Runs on ALL branches)
+# SERVICE-SPECIFIC CONFIGURATIONS
 # ==========================================
-run-tests:
+
+# 1. Account Service
+.account-rules:
+  variables:
+    SERVICE_DIR: "account-service"
+    IMAGE_NAME: "account-service"
+  rules:
+    - changes:
+        - account-service/**/*
+
+# 2. Transaction Service
+.transaction-rules:
+  variables:
+    SERVICE_DIR: "transaction-service"
+    IMAGE_NAME: "transaction-service"
+  rules:
+    - changes:
+        - transaction-service/**/*
+
+# 3. Notification Service
+.notification-rules:
+  variables:
+    SERVICE_DIR: "notification-service"
+    IMAGE_NAME: "notification-service"
+  rules:
+    - changes:
+        - notification-service/**/*
+
+# 4. API Gateway
+.gateway-rules:
+  variables:
+    SERVICE_DIR: "smartpay-gateway"
+    IMAGE_NAME: "smartpay-gateway"
+  rules:
+    - changes:
+        - smartpay-gateway/**/*
+
+# ==========================================
+# STAGE 1: TEST
+# ==========================================
+test:account:
+  extends: [.maven-base, .account-rules]
   stage: test
   script:
-    - echo "Running automated unit tests..."
-    # Replace this with your test execution command (e.g., npm test, pytest)
+    - mvn $MAVEN_CLI_OPTS test
+
+test:transaction:
+  extends: [.maven-base, .transaction-rules]
+  stage: test
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+
+test:notification:
+  extends: [.maven-base, .notification-rules]
+  stage: test
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+
+test:gateway:
+  extends: [.maven-base, .gateway-rules]
+  stage: test
+  script:
+    - mvn $MAVEN_CLI_OPTS test
 
 # ==========================================
-# 3. PACKAGE STAGE (Main Branch Only)
+# STAGE 2: BUILD & PACKAGE JAR
 # ==========================================
-build-docker-image:
+build:account:
+  extends: [.maven-base, .account-rules]
+  stage: build
+  needs: ["test:account"]
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package -DskipTests
+  artifacts:
+    paths:
+      - account-service/target/*.jar
+    expire_in: 1 day
+
+build:transaction:
+  extends: [.maven-base, .transaction-rules]
+  stage: build
+  needs: ["test:transaction"]
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package -DskipTests
+  artifacts:
+    paths:
+      - transaction-service/target/*.jar
+    expire_in: 1 day
+
+build:notification:
+  extends: [.maven-base, .notification-rules]
+  stage: build
+  needs: ["test:notification"]
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package -DskipTests
+  artifacts:
+    paths:
+      - notification-service/target/*.jar
+    expire_in: 1 day
+
+build:gateway:
+  extends: [.maven-base, .gateway-rules]
+  stage: build
+  needs: ["test:gateway"]
+  script:
+    - mvn $MAVEN_CLI_OPTS clean package -DskipTests
+  artifacts:
+    paths:
+      - smartpay-gateway/target/*.jar
+    expire_in: 1 day
+
+# ==========================================
+# STAGE 3: CONTAINERIZATION (DOCKER)
+# ==========================================
+package:account:
+  extends: [.docker-base, .account-rules]
   stage: package
-  image: docker:24.0.5
-  services:
-    - docker:24.0.5-dind
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-  before_script:
-    # Authenticates automatically using GitLab's built-in environment variables
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  needs: ["build:account"]
   script:
-    - echo "Building Docker image for SmartPay..."
-    - docker build -t $DOCKER_IMAGE_TAG .
-    - docker push $DOCKER_IMAGE_TAG
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./account-service
+    - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+package:transaction:
+  extends: [.docker-base, .transaction-rules]
+  stage: package
+  needs: ["build:transaction"]
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./transaction-service
+    - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+package:notification:
+  extends: [.docker-base, .notification-rules]
+  stage: package
+  needs: ["build:notification"]
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./notification-service
+    - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+package:gateway:
+  extends: [.docker-base, .gateway-rules]
+  stage: package
+  needs: ["build:gateway"]
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./smartpay-gateway
+    - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
 
 # ==========================================
-# 4. DEPLOY STAGE (Main Branch Only)
+# STAGE 4: ENTERPRISE DEPLOYMENT GATES
 # ==========================================
-deploy-to-production:
+deploy:staging:
   stage: deploy
+  image: alpine:latest
   script:
-    - echo "Pulling $DOCKER_IMAGE_TAG and deploying to production server..."
-    # Add your deployment script, SSH triggers, or Kubernetes rollout commands here
+    - echo "Deploying updated microservices to Staging Environment..."
+    # Real enterprise systems use helm/kubectl here to update K8s manifests
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+deploy:production:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying approved build to Production Infrastructure..."
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual # Requires a senior engineer to physically click "Play" in GitLab UI
