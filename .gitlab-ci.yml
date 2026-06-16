@@ -1,21 +1,35 @@
 stages:
   - build
   - test
-  - package
-  - deploy
+  # - package
+  # - deploy
 
 variables:
   # This automatically targets your project's built-in GitLab Container Registry
   DOCKER_IMAGE_TAG: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  MICROSERVICES: "account-service transaction-service notification-service smartpay-gateway"
+
+cache:
+  key: "maven-cache-$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository
 
 # ==========================================
 # 1. BUILD STAGE (Runs on ALL branches)
 # ==========================================
 compile-code:
   stage: build
+  image: maven:3.9.6-eclipse-temurin-21
   script:
-    - echo "Compiling/building application code..."
-    # Replace this with your actual build command (e.g., npm run build, mvn compile, etc.)
+    - echo "========================================================="
+    - echo "STARTING MAVEN COMPILATION"
+    - echo "Triggered by User - $GITLAB_USER_NAME (@$GITLAB_USER_LOGIN)"
+    - echo "Commit Message   - $CI_COMMIT_MESSAGE"
+    - echo "========================================================="
+    - mvn clean compile
+  # Enterprise Audit Logs
+  after_script:
+    - echo "[AUDIT LOG] Compilation phase completed for commit $CI_COMMIT_SHA by $GITLAB_USER_NAME."
 
 # ==========================================
 # 2. TEST STAGE (Runs on ALL branches)
