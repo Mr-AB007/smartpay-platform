@@ -184,30 +184,28 @@ package:account:
   stage: package
   needs: ["build:account"]
   script:
-    - /kaniko/executor --context $CI_PROJECT_DIR/account-service --dockerfile $CI_PROJECT_DIR/account-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
+    - /kaniko/executor --context $CI_PROJECT_DIR/account-service --dockerfile Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
 package:transaction:
   extends: [.kaniko-base, .transaction-rules]
   stage: package
   needs: ["build:transaction"]
   script:
-    - /kaniko/executor --context $CI_PROJECT_DIR/transaction-service --dockerfile $CI_PROJECT_DIR/transaction-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
+    - /kaniko/executor --context $CI_PROJECT_DIR/transaction-service --dockerfile Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
 package:notification:
   extends: [.kaniko-base, .notification-rules]
   stage: package
   needs: ["build:notification"]
   script:
-    - /kaniko/executor --context $CI_PROJECT_DIR/notification-service --dockerfile $CI_PROJECT_DIR/notification-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
+    - /kaniko/executor --context $CI_PROJECT_DIR/notification-service --dockerfile Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
 package:gateway:
   extends: [.kaniko-base, .gateway-rules]
   stage: package
   needs: ["build:gateway"]
   script:
-    - /kaniko/executor --context $CI_PROJECT_DIR/smartpay-gateway --dockerfile $CI_PROJECT_DIR/smartpay-gateway/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
-
-# ==========================================
+    - /kaniko/executor --context $CI_PROJECT_DIR/smartpay-gateway --dockerfile Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest# ==========================================
 # STAGE 4: VULNERABILITY SCANNING (TRIVY)
 # ==========================================
 # Automatically fails the build if CRITICAL or HIGH CVE security holes are found
