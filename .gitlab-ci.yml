@@ -1,15 +1,14 @@
 stages:
   - test
   - build
-  # - package
-  # - deploy
+  - package
+  - scan
+  - deploy
 
 variables:
   # Optimize Maven performance for CI/CD containers
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end -DinstallAtEnd=true -DdeployAtEnd=true"
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
-  DOCKER_DRIVER: overlay2
-  DOCKER_TLS_CERTDIR: "/certs"
 
 # Shared cache across all pipelines and jobs to speed up Maven dependencies
 cache:
@@ -26,12 +25,17 @@ cache:
   before_script:
     - cd $SERVICE_DIR
 
-.docker-base:
-  image: docker:24.0.7
-  services:
-    - docker:24.0.7-dind
+.kaniko-base:
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
   before_script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+
+.trivy-base:
+  image: aquasec/trivy:latest
+  stage: scan
 
 # ==========================================
 # SERVICE-SPECIFIC CONFIGURATIONS
@@ -76,29 +80,52 @@ cache:
 # ==========================================
 # STAGE 1: TEST
 # ==========================================
+# Uses -Dmaven.test.failure.ignore=true to record and track test results 
+# via artifacts without crashing the pipeline over missing databases.
+
 test:account:
   extends: [.maven-base, .account-rules]
   stage: test
   script:
-    - mvn $MAVEN_CLI_OPTS test -DskipTests
+    - mvn $MAVEN_CLI_OPTS test -Dmaven.test.failure.ignore=true
+  artifacts:
+    when: always
+    paths:
+      - account-service/target/surefire-reports/
+    expire_in: 1 week
 
 test:transaction:
   extends: [.maven-base, .transaction-rules]
   stage: test
   script:
-    - mvn $MAVEN_CLI_OPTS test -DskipTests
+    - mvn $MAVEN_CLI_OPTS test -Dmaven.test.failure.ignore=true
+  artifacts:
+    when: always
+    paths:
+      - transaction-service/target/surefire-reports/
+    expire_in: 1 week
 
 test:notification:
   extends: [.maven-base, .notification-rules]
   stage: test
   script:
-    - mvn $MAVEN_CLI_OPTS test -DskipTests
+    - mvn $MAVEN_CLI_OPTS test -Dmaven.test.failure.ignore=true
+  artifacts:
+    when: always
+    paths:
+      - notification-service/target/surefire-reports/
+    expire_in: 1 week
 
 test:gateway:
   extends: [.maven-base, .gateway-rules]
   stage: test
   script:
-    - mvn $MAVEN_CLI_OPTS test -DskipTests
+    - mvn $MAVEN_CLI_OPTS test -Dmaven.test.failure.ignore=true
+  artifacts:
+    when: always
+    paths:
+      - smartpay-gateway/target/surefire-reports/
+    expire_in: 1 week
 
 # ==========================================
 # STAGE 2: BUILD & PACKAGE JAR
@@ -110,7 +137,6 @@ build:account:
   script:
     - mvn $MAVEN_CLI_OPTS clean package -DskipTests
   artifacts:
-    when: always
     paths:
       - account-service/target/*.jar
     expire_in: 1 day
@@ -122,7 +148,6 @@ build:transaction:
   script:
     - mvn $MAVEN_CLI_OPTS clean package -DskipTests
   artifacts:
-    when: always
     paths:
       - transaction-service/target/*.jar
     expire_in: 1 day
@@ -134,7 +159,6 @@ build:notification:
   script:
     - mvn $MAVEN_CLI_OPTS clean package -DskipTests
   artifacts:
-    when: always
     paths:
       - notification-service/target/*.jar
     expire_in: 1 day
@@ -146,55 +170,80 @@ build:gateway:
   script:
     - mvn $MAVEN_CLI_OPTS clean package -DskipTests
   artifacts:
-    when: always
     paths:
       - smartpay-gateway/target/*.jar
     expire_in: 1 day
 
-# # ==========================================
-# # STAGE 3: CONTAINERIZATION (DOCKER)
-# # ==========================================
-# package:account:
-#   extends: [.docker-base, .account-rules]
-#   stage: package
-#   needs: ["build:account"]
-#   script:
-#     - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./account-service
-#     - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+# ==========================================
+# STAGE 3: SAFE CONTAINERIZATION (KANIKO)
+# ==========================================
+# Builds rootless, secure Docker images using Kaniko executor
 
-# package:transaction:
-#   extends: [.docker-base, .transaction-rules]
-#   stage: package
-#   needs: ["build:transaction"]
-#   script:
-#     - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./transaction-service
-#     - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+package:account:
+  extends: [.kaniko-base, .account-rules]
+  stage: package
+  needs: ["build:account"]
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR/account-service --dockerfile $CI_PROJECT_DIR/account-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
-# package:notification:
-#   extends: [.docker-base, .notification-rules]
-#   stage: package
-#   needs: ["build:notification"]
-#   script:
-#     - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./notification-service
-#     - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+package:transaction:
+  extends: [.kaniko-base, .transaction-rules]
+  stage: package
+  needs: ["build:transaction"]
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR/transaction-service --dockerfile $CI_PROJECT_DIR/transaction-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
-# package:gateway:
-#   extends: [.docker-base, .gateway-rules]
-#   stage: package
-#   needs: ["build:gateway"]
-#   script:
-#     - docker build -t $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA ./smartpay-gateway
-#     - docker push $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+package:notification:
+  extends: [.kaniko-base, .notification-rules]
+  stage: package
+  needs: ["build:notification"]
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR/notification-service --dockerfile $CI_PROJECT_DIR/notification-service/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
+
+package:gateway:
+  extends: [.kaniko-base, .gateway-rules]
+  stage: package
+  needs: ["build:gateway"]
+  script:
+    - /kaniko/executor --context $CI_PROJECT_DIR/smartpay-gateway --dockerfile $CI_PROJECT_DIR/smartpay-gateway/Dockerfile --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA --destination $CI_REGISTRY_IMAGE/$IMAGE_NAME:latest
 
 # ==========================================
-# STAGE 4: ENTERPRISE DEPLOYMENT GATES
+# STAGE 4: VULNERABILITY SCANNING (TRIVY)
+# ==========================================
+# Automatically fails the build if CRITICAL or HIGH CVE security holes are found
+
+scan:account:
+  extends: [.trivy-base, .account-rules]
+  needs: ["package:account"]
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+scan:transaction:
+  extends: [.trivy-base, .transaction-rules]
+  needs: ["package:transaction"]
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+scan:notification:
+  extends: [.trivy-base, .notification-rules]
+  needs: ["package:notification"]
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+scan:gateway:
+  extends: [.trivy-base, .gateway-rules]
+  needs: ["package:gateway"]
+  script:
+    - trivy image --exit-code 1 --severity HIGH,CRITICAL $CI_REGISTRY_IMAGE/$IMAGE_NAME:$CI_COMMIT_SHA
+
+# ==========================================
+# STAGE 5: ENTERPRISE DEPLOYMENT GATES
 # ==========================================
 # deploy:staging:
 #   stage: deploy
 #   image: alpine:latest
 #   script:
 #     - echo "Deploying updated microservices to Staging Environment..."
-#     # Real enterprise systems use helm/kubectl here to update K8s manifests
 #   rules:
 #     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
@@ -205,4 +254,4 @@ build:gateway:
 #     - echo "Deploying approved build to Production Infrastructure..."
 #   rules:
 #     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-#       when: manual # Requires a senior engineer to physically click "Play" in GitLab UI
+#       when: manual # Requires manual approval click in GitLab UI to execute
